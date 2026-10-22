@@ -2,7 +2,9 @@ package com.mindsweeper.ingestion;
 
 import com.google.gson.Gson;
 import io.javalin.Javalin;
+import io.javalin.http.Context;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,51 +13,55 @@ public class App {
 
     private static final Gson JSON = new Gson();
 
-    public static void main(String[] args) {
+    private final IngestionStore store;
+    private final BookDownloader downloader;
 
-        int port = Integer.parseInt(
-                System.getenv().getOrDefault(
-                        "INGESTION_PORT", "7001"));
+    private final ConcurrentHashMap<Integer, Object> locks =
+            new ConcurrentHashMap<>();
 
-        Path datalake = Path.of(
-                System.getenv().getOrDefault(
-                        "DATALAKE_PATH", "book_datalake"));
+    public App(IngestionStore store, BookDownloader downloader) {
+        this.store = store;
+        this.downloader = downloader;
+    }
 
-        IngestionStore store = new IngestionStore(datalake);
-        BookDownloader downloader = new BookDownloader();
+    public Javalin createServer() {
 
-        ConcurrentHashMap<Integer, Object> locks =
-                new ConcurrentHashMap<>();
+        Javalin app = Javalin.create(config ->
+                config.http.defaultContentType = "application/json"
+        );
 
-        Javalin app = Javalin.create(config -> {
-            config.http.defaultContentType = "application/json";
-        });
-
-        app.get("/status", ctx -> {
-            ctx.result(JSON.toJson(Map.of(
-                    "service", "ingestion",
-                    "status", "running"
-            )));
-        });
+        app.get("/status", ctx ->
+                json(ctx, 200, Map.of(
+                        "service", "ingestion",
+                        "status", "running"
+                ))
+        );
 
         app.get("/ingest/list", ctx -> {
-            var books = store.list();
+            var ids = store.list();
 
-            ctx.result(JSON.toJson(Map.of(
-                    "count", books.size(),
-                    "books", books
-            )));
+            json(ctx, 200, Map.of(
+                    "count", ids.size(),
+                    "books", ids
+            ));
         });
+
+        app.get("/ingest/stats", ctx ->
+                json(ctx, 200, store.stats())
+        );
 
         app.get("/ingest/status/{book_id}", ctx -> {
 
             int id = parseId(ctx.pathParam("book_id"));
 
-            ctx.result(JSON.toJson(Map.of(
+            String status = store.isComplete(id)
+                    ? "available"
+                    : "not_available";
+
+            json(ctx, 200, Map.of(
                     "book_id", id,
-                    "status", store.isComplete(id)
-                            ? "available" : "not_available"
-            )));
+                    "status", status
+            ));
         });
 
         app.post("/ingest/{book_id}", ctx -> {
@@ -63,78 +69,124 @@ public class App {
             int id = parseId(ctx.pathParam("book_id"));
 
             Object lock = locks.computeIfAbsent(
-                    id, key -> new Object());
+                    id, key -> new Object()
+            );
 
             synchronized (lock) {
 
                 if (store.isComplete(id)) {
-                    ctx.result(JSON.toJson(Map.of(
+
+                    json(ctx, 200, Map.of(
                             "book_id", id,
                             "status", "already_downloaded",
                             "path", store.bookDir(id).toString()
-                    )));
+                    ));
+
                     return;
                 }
 
                 try {
+
                     BookDownloader.Book book =
                             downloader.download(id);
 
-                    Path path = store.save(id, book);
+                    Path directory = store.save(id, book);
 
-                    ctx.result(JSON.toJson(Map.of(
+                    json(ctx, 200, Map.of(
                             "book_id", id,
                             "status", "downloaded",
-                            "path", path.toString()
-                    )));
-
-                } catch (java.io.IOException e) {
-                    ctx.status(502).result(JSON.toJson(Map.of(
-                            "error", "ingestion_failed",
-                            "message", e.getMessage()
-                    )));
+                            "path", directory.toString()
+                    ));
 
                 } catch (InterruptedException e) {
+
                     Thread.currentThread().interrupt();
 
-                    ctx.status(503).result(JSON.toJson(Map.of(
+                    json(ctx, 503, Map.of(
                             "error", "interrupted"
-                    )));
+                    ));
+
+                } catch (IOException e) {
+
+                    json(ctx, 502, Map.of(
+                            "error", "ingestion_failed",
+                            "message", e.getMessage()
+                    ));
                 }
             }
         });
 
         app.exception(IllegalArgumentException.class,
-                (e, ctx) -> {
-                    ctx.status(400).result(JSON.toJson(Map.of(
-                            "error", "invalid_book_id",
-                            "message", e.getMessage()
-                    )));
-                });
+                (e, ctx) -> json(ctx, 400, Map.of(
+                        "error", "invalid_book_id",
+                        "message", e.getMessage()
+                ))
+        );
 
         app.exception(Exception.class, (e, ctx) -> {
             e.printStackTrace();
 
-            ctx.status(500).result(JSON.toJson(Map.of(
+            json(ctx, 500, Map.of(
                     "error", "internal_error"
-            )));
+            ));
         });
 
-        app.start(port);
+        return app;
     }
 
-    private static int parseId(String raw) {
+    private static void json(
+            Context ctx,
+            int status,
+            Object value
+    ) {
+
+        ctx.status(status)
+                .contentType("application/json")
+                .result(JSON.toJson(value));
+    }
+
+    private static int parseId(String value) {
 
         try {
-            int id = Integer.parseInt(raw);
+
+            int id = Integer.parseInt(value);
 
             if (id > 0) {
                 return id;
             }
+
         } catch (NumberFormatException ignored) {
         }
 
         throw new IllegalArgumentException(
-                "book_id must be a positive 32-bit integer");
+                "book_id must be a positive 32-bit integer"
+        );
+    }
+
+    public static void main(String[] args) {
+
+        int port = Integer.parseInt(
+                System.getenv().getOrDefault(
+                        "INGESTION_PORT", "7001"
+                )
+        );
+
+        Path root = Path.of(
+                System.getenv().getOrDefault(
+                        "DATALAKE_PATH", "book_datalake"
+                )
+        );
+
+        String url = System.getenv().getOrDefault(
+                "GUTENBERG_BASE_URL",
+                "https://www.gutenberg.org/cache/epub/"
+        );
+
+        App service = new App(
+                new IngestionStore(root),
+                new BookDownloader(url)
+        );
+
+        service.createServer().start(port);
     }
 }
