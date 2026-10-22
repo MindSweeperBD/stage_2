@@ -7,29 +7,56 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class BookDownloader {
 
-    private static final String START =
-            "*** START OF THE PROJECT GUTENBERG EBOOK";
-    private static final String END =
-            "*** END OF THE PROJECT GUTENBERG EBOOK";
+    private static final Pattern START = Pattern.compile(
+            "(?im)^\\*{3}\\s*START OF (?:THE|THIS) " +
+            "PROJECT GUTENBERG EBOOK[^\\r\\n]*\\*{3}\\s*$"
+    );
 
-    private final HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    private static final Pattern END = Pattern.compile(
+            "(?im)^\\*{3}\\s*END OF (?:THE|THIS) " +
+            "PROJECT GUTENBERG EBOOK[^\\r\\n]*\\*{3}\\s*$"
+    );
+
+    private final HttpClient client;
+    private final String baseUrl;
 
     public record Book(String header, String body) {}
+
+    public BookDownloader() {
+        this("https://www.gutenberg.org/cache/epub/");
+    }
+
+    public BookDownloader(String baseUrl) {
+
+        this.baseUrl = baseUrl.endsWith("/")
+                ? baseUrl
+                : baseUrl + "/";
+
+        this.client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+    }
 
     public Book download(int id)
             throws IOException, InterruptedException {
 
-        String url = "https://www.gutenberg.org/cache/epub/"
-                + id + "/pg" + id + ".txt";
+        if (id <= 0) {
+            throw new IllegalArgumentException(
+                    "book_id must be positive"
+            );
+        }
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
+        URI uri = URI.create(
+                baseUrl + id + "/pg" + id + ".txt"
+        );
+
+        HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(40))
                 .GET()
                 .build();
@@ -37,33 +64,49 @@ public class BookDownloader {
         HttpResponse<String> response = client.send(
                 request,
                 HttpResponse.BodyHandlers.ofString(
-                        StandardCharsets.UTF_8)
+                        StandardCharsets.UTF_8
+                )
         );
 
         if (response.statusCode() != 200) {
             throw new IOException(
-                    "Gutenberg returned HTTP "
-                    + response.statusCode());
+                    "Source returned HTTP " +
+                    response.statusCode()
+            );
         }
 
         return split(response.body());
     }
 
-    public static Book split(String text) throws IOException {
+    public static Book split(String text)
+            throws IOException {
 
-        int start = text.indexOf(START);
-        int end = text.indexOf(END, Math.max(start, 0));
+        Matcher start = START.matcher(text);
 
-        if (start < 0 || end < 0 || end <= start) {
+        if (!start.find()) {
             throw new IOException(
-                    "Missing or incorrectly ordered Gutenberg markers");
+                    "Gutenberg START marker not found"
+            );
         }
 
-        String header = text.substring(0, start);
-        String body = text.substring(start + START.length(), end);
+        Matcher end = END.matcher(text);
+
+        if (!end.find(start.end())) {
+            throw new IOException(
+                    "Gutenberg END marker not found"
+            );
+        }
+
+        String header = text.substring(
+                0, start.start()
+        ).strip();
+
+        String body = text.substring(
+                start.end(), end.start()
+        ).strip();
 
         if (body.isBlank()) {
-            throw new IOException("Empty book body");
+            throw new IOException("Book body is empty");
         }
 
         return new Book(header, body);
