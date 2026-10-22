@@ -19,77 +19,127 @@ public class IngestionStore {
     }
 
     public boolean isComplete(int id) {
-        Path dir = bookDir(id);
+
+        Path directory = bookDir(id);
 
         try {
-            return Files.isRegularFile(dir.resolve(".complete"))
-                    && Files.isRegularFile(dir.resolve("header.txt"))
-                    && Files.isRegularFile(dir.resolve("body.txt"))
-                    && Files.size(dir.resolve("body.txt")) > 0;
+
+            return Files.isRegularFile(
+                    directory.resolve(".complete")
+            )
+            && Files.isRegularFile(
+                    directory.resolve("header.txt")
+            )
+            && Files.isRegularFile(
+                    directory.resolve("body.txt")
+            )
+            && Files.size(
+                    directory.resolve("body.txt")
+            ) > 0;
+
         } catch (IOException e) {
             return false;
         }
     }
 
     public synchronized Path save(
-            int id, BookDownloader.Book book) throws IOException {
-
-        Path dir = bookDir(id);
+            int id,
+            BookDownloader.Book book
+    ) throws IOException {
 
         if (isComplete(id)) {
-            return dir;
+            return bookDir(id);
         }
 
-        Files.createDirectories(dir);
-        Files.deleteIfExists(dir.resolve(".complete"));
+        if (book == null
+                || book.header() == null
+                || book.body() == null
+                || book.body().isBlank()) {
 
-        Path headerTmp = Files.createTempFile(
-                dir, "header-", ".tmp");
-        Path bodyTmp = Files.createTempFile(
-                dir, "body-", ".tmp");
+            throw new IOException("Invalid book content");
+        }
+
+        Path directory = bookDir(id);
+
+        Files.createDirectories(directory);
+
+        Files.deleteIfExists(
+                directory.resolve(".complete")
+        );
+
+        Path headerTemp = Files.createTempFile(
+                directory, "header-", ".tmp"
+        );
+
+        Path bodyTemp = Files.createTempFile(
+                directory, "body-", ".tmp"
+        );
 
         try {
-            Files.writeString(
-                    headerTmp, book.header() + "\n",
-                    StandardCharsets.UTF_8);
 
             Files.writeString(
-                    bodyTmp, book.body() + "\n",
-                    StandardCharsets.UTF_8);
+                    headerTemp,
+                    book.header(),
+                    StandardCharsets.UTF_8
+            );
 
-            move(headerTmp, dir.resolve("header.txt"));
-            move(bodyTmp, dir.resolve("body.txt"));
+            Files.writeString(
+                    bodyTemp,
+                    book.body(),
+                    StandardCharsets.UTF_8
+            );
 
-            Path marker = Files.createTempFile(
-                    dir, "complete-", ".tmp");
+            move(
+                    headerTemp,
+                    directory.resolve("header.txt")
+            );
+
+            move(
+                    bodyTemp,
+                    directory.resolve("body.txt")
+            );
+
+            Path markerTemp = Files.createTempFile(
+                    directory, "complete-", ".tmp"
+            );
 
             try {
+
                 Files.writeString(
-                        marker, "ok\n", StandardCharsets.UTF_8);
-                move(marker, dir.resolve(".complete"));
+                        markerTemp,
+                        "complete\n",
+                        StandardCharsets.UTF_8
+                );
+
+                move(
+                        markerTemp,
+                        directory.resolve(".complete")
+                );
+
             } finally {
-                Files.deleteIfExists(marker);
+                Files.deleteIfExists(markerTemp);
             }
 
-            return dir;
+            return directory;
 
         } finally {
-            Files.deleteIfExists(headerTmp);
-            Files.deleteIfExists(bodyTmp);
+
+            Files.deleteIfExists(headerTemp);
+            Files.deleteIfExists(bodyTemp);
         }
     }
 
-    private static void move(Path source, Path destination)
-            throws IOException {
+    private static void move(
+            Path source,
+            Path destination
+    ) throws IOException {
 
-        try {
-            Files.move(source, destination,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(source, destination,
-                    StandardCopyOption.REPLACE_EXISTING);
-        }
+        Files.move(
+                source,
+                destination,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+        );
     }
 
     public List<Integer> list() throws IOException {
@@ -99,21 +149,66 @@ public class IngestionStore {
         }
 
         try (Stream<Path> stream = Files.list(root)) {
+
             return stream
                     .filter(Files::isDirectory)
-                    .map(p -> p.getFileName().toString())
-                    .filter(s -> s.matches("[1-9][0-9]*"))
-                    .map(s -> {
+                    .map(path ->
+                            path.getFileName().toString()
+                    )
+                    .map(name -> {
                         try {
-                            return Integer.parseInt(s);
+                            return Integer.parseInt(name);
                         } catch (NumberFormatException e) {
                             return -1;
                         }
                     })
-                    .filter(id -> id > 0)
-                    .filter(this::isComplete)
+                    .filter(id ->
+                            id > 0 && isComplete(id)
+                    )
                     .sorted()
                     .toList();
         }
+    }
+
+    public record StorageStats(
+            long books,
+            long files,
+            long directories,
+            long bytes
+    ) {}
+
+    public StorageStats stats() throws IOException {
+
+        if (!Files.exists(root)) {
+            return new StorageStats(0, 0, 0, 0);
+        }
+
+        long files = 0;
+        long directories = 0;
+        long bytes = 0;
+
+        try (Stream<Path> stream = Files.walk(root)) {
+
+            for (Path path :
+                    (Iterable<Path>) stream::iterator) {
+
+                if (Files.isDirectory(path)) {
+
+                    directories++;
+
+                } else if (Files.isRegularFile(path)) {
+
+                    files++;
+                    bytes += Files.size(path);
+                }
+            }
+        }
+
+        return new StorageStats(
+                list().size(),
+                files,
+                directories,
+                bytes
+        );
     }
 }
