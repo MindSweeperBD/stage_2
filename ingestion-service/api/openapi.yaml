@@ -1,0 +1,95 @@
+openapi: 3.0.3
+
+info:
+  title: Mindsweeper Ingestion Service
+  version: 1.0.0
+  description: >
+    Internal REST API used by the Control Module.
+    Book ingestion is synchronous.
+
+servers:
+  - url: http://localhost:7001
+
+paths:
+
+  /status:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ingest/list:
+    get:
+      summary: List completed book IDs
+      responses:
+        '200':
+          description: Completed books
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ingest/stats:
+    get:
+      summary: Physical datalake statistics
+      responses:
+        '200':
+          description: File, directory and byte counts
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ingest/status/{book_id}:
+    get:
+      summary: Check book availability
+      parameters:
+        - $ref: '#/components/parameters/bookId'
+      responses:
+        '200':
+          description: Book available or not available
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid book ID
+
+  /ingest/{book_id}:
+    post:
+      summary: Download and store a Gutenberg book
+      description: >
+        Synchronous ingestion. Repeated requests for a
+        completed book return already_downloaded.
+        Only one writer process is supported.
+      parameters:
+        - $ref: '#/components/parameters/bookId'
+      responses:
+        '200':
+          description: Book downloaded or already downloaded
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid book ID
+        '502':
+          description: Download or storage failure
+        '503':
+          description: Operation interrupted
+
+components:
+  parameters:
+    bookId:
+      name: book_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2147483647
