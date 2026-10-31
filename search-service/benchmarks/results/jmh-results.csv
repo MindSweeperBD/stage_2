@@ -1,0 +1,4 @@
+"Benchmark","Mode","Threads","Samples","Score","Score Error (99,9%)","Unit"
+"mindsweeper.search.SearchBenchmark.filteredSearch","avgt",1,10,"3,318188","0,445619","ms/op"
+"mindsweeper.search.SearchBenchmark.keywordSearch","avgt",1,10,"7,977589","1,004770","ms/op"
+"mindsweeper.search.SearchBenchmark.tokenizeQuery","avgt",1,10,"0,002222","0,000052","ms/op"

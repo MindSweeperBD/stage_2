@@ -1,0 +1,5 @@
+threads,total_requests,avg_latency_ms,p95_latency_ms,throughput_req_per_sec
+1,40,14.641,21.464,67.74
+2,80,8.899,22.659,216.00
+4,160,9.145,18.372,399.59
+8,320,10.590,23.412,672.21

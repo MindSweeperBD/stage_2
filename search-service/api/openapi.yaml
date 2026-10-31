@@ -1,0 +1,209 @@
+openapi: 3.0.3
+
+info:
+  title: Mindsweeper Search Service
+  version: 1.0.0
+  description: >
+    Front-end-facing REST API for keyword queries, metadata filtering
+    (author, language, publication year), relevance ranking, and pagination.
+
+servers:
+  - url: http://localhost:7003
+
+paths:
+
+  /status:
+    get:
+      summary: Health check and datamart statistics
+      responses:
+        '200':
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: search
+                  status:
+                    type: string
+                    example: running
+                  indexed_books:
+                    type: integer
+                    example: 120
+                  indexed_terms:
+                    type: integer
+                    example: 45200
+                  metadata_db_available:
+                    type: boolean
+                    example: true
+                  inverted_index_available:
+                    type: boolean
+                    example: true
+
+  /search:
+    get:
+      summary: Search indexed books by keyword and optional metadata filters
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Keyword search query (required, non-blank)
+          schema:
+            type: string
+            example: adventure
+        - name: author
+          in: query
+          required: false
+          description: Optional case-insensitive author substring filter
+          schema:
+            type: string
+            example: Jane Austen
+        - name: language
+          in: query
+          required: false
+          description: Optional language filter (ISO code such as 'en', 'es', 'fr' or full name)
+          schema:
+            type: string
+            example: en
+        - name: year
+          in: query
+          required: false
+          description: Optional publication year filter (positive integer)
+          schema:
+            type: integer
+            minimum: 1
+            example: 1813
+        - name: offset
+          in: query
+          required: false
+          description: Starting offset for pagination (default 0)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of records returned (default 20, max 100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Paginated search results (returns empty list when no matches exist)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Missing or invalid query/filter/pagination parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /books/{book_id}:
+    get:
+      summary: Retrieve metadata for a specific indexed book
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Book metadata record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookRecord'
+        '400':
+          description: Invalid book_id format
+        '404':
+          description: Book not found in metadata datamart
+
+  /search/filters:
+    get:
+      summary: Retrieve available filter values (authors, languages, years)
+      responses:
+        '200':
+          description: Available filter values
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authors:
+                    type: array
+                    items:
+                      type: string
+                  languages:
+                    type: array
+                    items:
+                      type: string
+                  years:
+                    type: array
+                    items:
+                      type: integer
+
+components:
+  schemas:
+    BookRecord:
+      type: object
+      properties:
+        book_id:
+          type: integer
+          example: 1342
+        title:
+          type: string
+          example: Pride and Prejudice
+        author:
+          type: string
+          example: Jane Austen
+        language:
+          type: string
+          example: en
+        year:
+          type: integer
+          nullable: true
+          example: 1813
+
+    SearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+          example: adventure
+        filters:
+          type: object
+          example:
+            language: en
+        total:
+          type: integer
+          example: 25
+        offset:
+          type: integer
+          example: 0
+        limit:
+          type: integer
+          example: 20
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookRecord'
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: invalid_parameter
+        message:
+          type: string
+          example: Parameter 'q' is required and cannot be blank
