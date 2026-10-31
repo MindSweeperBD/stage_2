@@ -1,4 +1,5 @@
 openapi: 3.0.3
+
 info:
   title: Mindsweeper Indexing Service API
   version: 1.1.0
@@ -6,15 +7,19 @@ info:
     Internal API for indexing books from book_datalake. Metadata is persisted in
     metadata.db and the Stage 1 monolithic inverted index is persisted in
     inverted_index.json.
+
 servers:
   - url: http://localhost:7002
     description: Default single-machine Stage 2 deployment
+
 tags:
   - name: Indexing
     description: Internal indexing operations
   - name: Operational
     description: Health and status operations
+
 paths:
+
   /status:
     get:
       tags:
@@ -38,6 +43,7 @@ paths:
                   status:
                     type: string
                     example: running
+
   /index/update/{book_id}:
     post:
       tags:
@@ -97,6 +103,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
   /index/rebuild:
     post:
       tags:
@@ -125,6 +132,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
   /index/status:
     get:
       tags:
@@ -146,6 +154,7 @@ paths:
                 index_version: d13ef60b-a219-4420-b943-0c522b4e57cb
                 unique_terms: 45000
                 update_in_progress: false
+
 components:
   schemas:
     UpdateResponse:
