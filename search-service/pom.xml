@@ -101,7 +101,7 @@
                             <finalName>search-service</finalName>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>mindsweeper.search.App</mainClass>
+                                    <mainClass>com.mindsweeper.search.App</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>
