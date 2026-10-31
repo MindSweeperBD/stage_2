@@ -20,8 +20,8 @@ Each e book has its own directory, diagnosed by its advantageous Gutenberg e boo
 ## 2. File contents
 
 - `header.Txt`: Project Gutenberg metadata and introductory textual content before the START marker.
-- `frame.Txt`: Main e book content between the START and END markers.
-- `.Entire`: Marker indicating that the e book was fully stored.
+- `body.Txt`: Main e book content between the START and END markers.
+- `.complete`: Marker indicating that the e book was fully stored.
 
 All text documents use UTF-8 encoding.
 
@@ -48,7 +48,7 @@ Possible a hit statuses:
 
 The Indexing Service can test readiness the use of:
 
-`GET /ingest/repute/book_id`
+`GET /ingest/status/book_id`
 
 ## 5. Failure recovery
 
