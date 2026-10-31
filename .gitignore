@@ -1,0 +1,10 @@
+# created by virtualenv automatically
+# Configuración de PyCharm e IntelliJ
+.idea/
+*.iml
+# Datos descargados
+book_datamart/
+book_datalake/
+# tarjet
+target/
+*.class

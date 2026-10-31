@@ -1,5 +1,6 @@
 package com.mindsweeper.benchmark;
 
+import org.openjdk.jmh.results.format.ResultFormatType;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.options.*;
 

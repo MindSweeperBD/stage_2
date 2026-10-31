@@ -1,0 +1,242 @@
+openapi: 3.0.3
+info:
+  title: Mindsweeper Indexing Service API
+  version: 1.1.0
+  description: >-
+    Internal API for indexing books from book_datalake. Metadata is persisted in
+    metadata.db and the Stage 1 monolithic inverted index is persisted in
+    inverted_index.json.
+servers:
+  - url: http://localhost:7002
+    description: Default single-machine Stage 2 deployment
+tags:
+  - name: Indexing
+    description: Internal indexing operations
+  - name: Operational
+    description: Health and status operations
+paths:
+  /status:
+    get:
+      tags:
+        - Operational
+      summary: Check that the service is running
+      description: "Provider: Indexing Service. Consumer: Control Module or operator."
+      responses:
+        '200':
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - service
+                  - status
+                properties:
+                  service:
+                    type: string
+                    example: indexing
+                  status:
+                    type: string
+                    example: running
+  /index/update/{book_id}:
+    post:
+      tags:
+        - Indexing
+      summary: Index or refresh one book
+      description: >-
+        Provider: Indexing Service. Consumer: Control Module. Synchronous operation.
+        Reads one completed book from book_datalake, writes its Stage 1 metadata row
+        to metadata.db and updates its postings in inverted_index.json. Repeating an
+        unchanged update is idempotent.
+      parameters:
+        - in: path
+          name: book_id
+          required: true
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+          example: 1342
+      responses:
+        '200':
+          description: Update completed or the book was already indexed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateResponse'
+              examples:
+                updated:
+                  value:
+                    book_id: 1342
+                    index: updated
+                    version: dcd1bc59-a281-4e00-abe2-8c53a7ecf8d2
+                    indexed_at: '2026-10-31T15:12:29.755064600Z'
+                    unique_terms: 6834
+                unchanged:
+                  value:
+                    book_id: 1342
+                    index: already_indexed
+                    version: dcd1bc59-a281-4e00-abe2-8c53a7ecf8d2
+                    indexed_at: '2026-10-31T15:12:29.755064600Z'
+                    unique_terms: 6834
+        '400':
+          description: Invalid book identifier
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Book is not completely available in the datalake
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: SQLite or datamart publication error; rebuild may be required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /index/rebuild:
+    post:
+      tags:
+        - Indexing
+      summary: Rebuild both datamarts from book_datalake
+      description: >-
+        Provider: Indexing Service. Consumer: Control Module or operator. Synchronous
+        operation. Replaces metadata.db rows and inverted_index.json using all complete
+        numeric book directories under book_datalake. Incomplete directories are skipped.
+      responses:
+        '200':
+          description: Rebuild completed and published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebuildResponse'
+              example:
+                books_processed: 120
+                skipped_incomplete: 2
+                elapsed_time_ms: 35200
+                elapsed_time: 35.200s
+                version: d13ef60b-a219-4420-b943-0c522b4e57cb
+        '500':
+          description: Rebuild failed; recovery marker remains if publication could not be completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /index/status:
+    get:
+      tags:
+        - Operational
+      summary: Get statistics for the currently loaded index
+      description: "Provider: Indexing Service. Consumer: Control Module or operator."
+      responses:
+        '200':
+          description: Current index status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexStatus'
+              example:
+                books_indexed: 120
+                last_update: '2026-10-31T12:00:00Z'
+                index_size_MB: 2.7
+                index_size_bytes: 2831155
+                index_version: d13ef60b-a219-4420-b943-0c522b4e57cb
+                unique_terms: 45000
+                update_in_progress: false
+components:
+  schemas:
+    UpdateResponse:
+      type: object
+      required:
+        - book_id
+        - index
+        - version
+        - unique_terms
+      properties:
+        book_id:
+          type: integer
+          format: int32
+        index:
+          type: string
+          enum:
+            - updated
+            - already_indexed
+        version:
+          type: string
+          description: SHA-256 digest of the published metadata and inverted index.
+        indexed_at:
+          type: string
+          nullable: true
+          format: date-time
+        unique_terms:
+          type: integer
+          minimum: 0
+    RebuildResponse:
+      type: object
+      required:
+        - books_processed
+        - skipped_incomplete
+        - elapsed_time_ms
+        - elapsed_time
+        - version
+      properties:
+        books_processed:
+          type: integer
+          minimum: 0
+        skipped_incomplete:
+          type: integer
+          minimum: 0
+        elapsed_time_ms:
+          type: integer
+          format: int64
+          minimum: 0
+        elapsed_time:
+          type: string
+          example: 35.200s
+        version:
+          type: string
+          description: SHA-256 digest of the published metadata and inverted index.
+    IndexStatus:
+      type: object
+      required:
+        - books_indexed
+        - index_size_MB
+        - index_size_bytes
+        - index_version
+        - unique_terms
+        - update_in_progress
+      properties:
+        books_indexed:
+          type: integer
+          format: int64
+        last_update:
+          type: string
+          nullable: true
+          format: date-time
+        index_size_MB:
+          type: number
+          format: double
+          description: Combined datamart size in MiB (bytes divided by 1048576).
+        index_size_bytes:
+          type: integer
+          format: int64
+        index_version:
+          type: string
+          description: SHA-256 datamart digest, or recovery-required while an interrupted publication awaits rebuild.
+        unique_terms:
+          type: integer
+          format: int64
+        update_in_progress:
+          type: boolean
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        message:
+          type: string
