@@ -1,0 +1,15 @@
+{
+  "1342": {
+    "state": "VERIFIED",
+    "attempts": 3
+  },
+  "999999": {
+    "state": "FAILED",
+    "attempts": 1,
+    "lastError": "Ingestion failed: {\"error\":\"ingestion_failed\",\"message\":\"Source returned HTTP 404\"}"
+  },
+  "1343": {
+    "state": "FAILED",
+    "attempts": 1
+  }
+}
