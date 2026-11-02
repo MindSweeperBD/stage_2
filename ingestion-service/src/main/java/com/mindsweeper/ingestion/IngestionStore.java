@@ -134,12 +134,23 @@ public class IngestionStore {
             Path destination
     ) throws IOException {
 
-        Files.move(
-                source,
-                destination,
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING
-        );
+        try {
+
+            Files.move(
+                    source,
+                    destination,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+
+        } catch (AtomicMoveNotSupportedException e) {
+
+            Files.move(
+                    source,
+                    destination,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+        }
     }
 
     public List<Integer> list() throws IOException {

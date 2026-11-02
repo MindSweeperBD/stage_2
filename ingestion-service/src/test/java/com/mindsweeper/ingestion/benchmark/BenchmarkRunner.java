@@ -9,6 +9,11 @@ public class BenchmarkRunner {
     public static void main(String[] args)
             throws Exception {
 
+                
+        java.nio.file.Files.createDirectories(
+        java.nio.file.Path.of("benchmarks/results")
+        );
+
         Options options = new OptionsBuilder()
                 .include(".*IngestionBenchmark.*")
                 .resultFormat(ResultFormatType.CSV)
