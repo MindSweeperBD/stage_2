@@ -1,0 +1,13 @@
+benchmark,mode,threads,score,unit,source_file
+updateBookThroughput,thrpt,1,13.319612,ops/s,jmh-indexing-t1.csv
+extractMetadata,avgt,1,0.001675,ms/op,jmh-indexing-t1.csv
+normalizeText,avgt,1,0.800431,ms/op,jmh-indexing-t1.csv
+updateBook,avgt,1,66.373533,ms/op,jmh-indexing-t1.csv
+updateBookThroughput,thrpt,2,15.805299,ops/s,jmh-indexing-t2.csv
+extractMetadata,avgt,2,0.001462,ms/op,jmh-indexing-t2.csv
+normalizeText,avgt,2,0.804331,ms/op,jmh-indexing-t2.csv
+updateBook,avgt,2,129.684238,ms/op,jmh-indexing-t2.csv
+updateBookThroughput,thrpt,4,15.707056,ops/s,jmh-indexing-t4.csv
+extractMetadata,avgt,4,0.00155,ms/op,jmh-indexing-t4.csv
+normalizeText,avgt,4,0.870874,ms/op,jmh-indexing-t4.csv
+updateBook,avgt,4,254.349303,ms/op,jmh-indexing-t4.csv

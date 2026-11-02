@@ -5,9 +5,6 @@ import argparse
 import csv
 import platform
 import os
-import re
-import statistics
-import subprocess
 from collections import defaultdict
 from pathlib import Path
 
@@ -38,7 +35,7 @@ def read_jmh_csv(input_dir: Path) -> list[dict[str, object]]:
                         f"Unexpected JMH CSV columns in {csv_path.name}: {list(raw.keys())}"
                     )
                 try:
-                    score = float(raw[score_key])
+                    score = float(raw[score_key].strip().replace(",", "."))
                     threads = int(raw[threads_key])
                 except (TypeError, ValueError):
                     continue
@@ -63,28 +60,70 @@ def write_summary(rows: list[dict[str, object]], output: Path) -> None:
 
 
 def plot_average_time(rows: list[dict[str, object]], output: Path) -> bool:
-    selected = [r for r in rows if str(r["mode"]).lower() in {"avgt", "average time"}
-                and str(r["unit"]).lower() in {"ms/op", "us/op", "ns/op", "s/op"}]
+    selected = [
+        r for r in rows
+        if str(r["mode"]).lower() in {"avgt", "average time"}
+        and str(r["unit"]).lower() in {"ms/op", "us/op", "ns/op", "s/op"}
+    ]
+
     if not selected:
         return False
 
+    conversion = {
+        "s/op": 1000,
+        "ms/op": 1,
+        "us/op": 0.001,
+        "ns/op": 0.000001
+    }
+
     grouped: dict[str, list[tuple[int, float]]] = defaultdict(list)
+
     for row in selected:
-        grouped[str(row["benchmark"])].append((int(row["threads"]), float(row["score"])))
+        benchmark = str(row["benchmark"])
+        threads = int(row["threads"])
+        unit = str(row["unit"]).lower()
+        score = float(row["score"]) * conversion[unit]
+
+        grouped[benchmark].append((threads, score))
 
     plt.figure(figsize=(9, 5.5))
+
     for name, values in sorted(grouped.items()):
         values.sort()
-        plt.plot([v[0] for v in values], [v[1] for v in values], marker="o", label=name)
+
+        baseline = values[0][1]
+
+        normalized = [
+            (threads, score / baseline)
+            for threads, score in values
+        ]
+
+        plt.plot(
+            [v[0] for v in normalized],
+            [v[1] for v in normalized],
+            marker="o",
+            label=name
+        )
+
+    plt.axhline(
+        y=1,
+        color="gray",
+        linestyle="--",
+        alpha=0.7,
+        label="Baseline (1 thread)"
+    )
+
     plt.xlabel("JMH worker threads")
-    plt.ylabel("Average time per operation (JMH unit)")
-    plt.title("Indexing component latency by thread configuration")
+    plt.ylabel("Relative execution time (1 thread = 1.0)")
+    plt.title("Normalized indexing latency by thread configuration")
+
     plt.xticks(sorted({int(r["threads"]) for r in selected}))
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
     plt.savefig(output, dpi=160)
     plt.close()
+
     return True
 
 
@@ -157,10 +196,10 @@ def write_results_readme(rows: list[dict[str, object]], output: Path) -> None:
         "",
         "## Interpretation notes",
         "",
-        "- `updateBook` includes reading book_datalake files, Stage 1 metadata extraction, Stage 1 tokenization, posting updates, SQLite metadata persistence, and atomic JSON-index publication.",
+        "- `updateBook` includes reading book_datalake files, metadata extraction, tokenization, posting updates, SQLite metadata persistence, and atomic JSON-index publication.",
         "- `normalizeText` and `extractMetadata` are isolated component microbenchmarks; they do not include HTTP or datamart publication.",
         "- The benchmark compares 1, 2, and 4 JMH worker threads on one host. The service uses a fair in-process writer lock and a local OS file lock, so datamart publications are serialized.",
-        "- Threads are not process replicas. These measurements do not demonstrate multi-process or Stage 3 cluster scalability.",
+        "- Threads are not process replicas. These measurements do not demonstrate multi-process.",
         "- Compare configurations on the same host with the same JVM heap and an otherwise idle machine. Keep the raw JMH CSV files with the report.",
         "",
         "## Plots",

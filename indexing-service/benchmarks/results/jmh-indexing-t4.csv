@@ -1,0 +1,5 @@
+"Benchmark","Mode","Threads","Samples","Score","Score Error (99,9%)","Unit"
+"com.mindsweeper.indexing.IndexingBenchmark.updateBookThroughput","thrpt",4,10,"15,707056","1,362279","ops/s"
+"com.mindsweeper.indexing.IndexingBenchmark.extractMetadata","avgt",4,10,"0,001550","0,000058","ms/op"
+"com.mindsweeper.indexing.IndexingBenchmark.normalizeText","avgt",4,10,"0,870874","0,046881","ms/op"
+"com.mindsweeper.indexing.IndexingBenchmark.updateBook","avgt",4,10,"254,349303","14,686681","ms/op"
