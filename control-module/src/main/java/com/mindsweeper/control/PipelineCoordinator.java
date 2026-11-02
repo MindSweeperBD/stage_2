@@ -1,96 +1,143 @@
 package com.mindsweeper.control;
 
 import java.io.IOException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class PipelineCoordinator {
 
     private final ServiceClient serviceClient;
-
     private final StateRepository stateRepository;
 
-    public PipelineCoordinator(
-            ServiceClient serviceClient,
-            StateRepository stateRepository
-    ) {
+    private final ConcurrentHashMap<Integer, ReentrantLock> bookLocks =
+            new ConcurrentHashMap<>();
+
+    public PipelineCoordinator(ServiceClient serviceClient,
+                               StateRepository stateRepository) {
         this.serviceClient = serviceClient;
         this.stateRepository = stateRepository;
     }
 
-    public void processBook(int bookId)
+    private ReentrantLock getLock(int bookId) {
+        return bookLocks.computeIfAbsent(
+                bookId,
+                id -> new ReentrantLock()
+        );
+    }
+
+    public PipelineState processBook(int bookId)
             throws IOException, InterruptedException {
 
         if (bookId <= 0) {
-            throw new IllegalArgumentException("Book ID must be positive");
+            throw new IllegalArgumentException("Invalid book ID");
         }
 
-        StateRepository.PipelineRecord record =
-                stateRepository.getRecord(bookId);
+        long requestTime = System.currentTimeMillis();
 
-        if (record != null
-                && record.getState() == PipelineState.VERIFIED) {
-            return;
-        }
+        System.out.println(
+                "[CONCURRENCY] Book " + bookId +
+                        " - REQUESTED at " + requestTime
+        );
 
-        stateRepository.incrementAttempts(bookId);
+        ReentrantLock lock = getLock(bookId);
+
+        lock.lockInterruptibly();
+
+        long startTime = System.currentTimeMillis();
+
+        System.out.println(
+                "[CONCURRENCY] Book " + bookId +
+                        " - STARTED at " + startTime
+        );
 
         try {
-
-            // Step 1: Ingestion
-            stateRepository.updateState(
-                    bookId, PipelineState.INGESTING, null
-            );
-
-            serviceClient.ingestBook(bookId);
-
-            if (!serviceClient.isBookIngested(bookId)) {
-                throw new IOException("Book was not successfully ingested");
+            if (getBookState(bookId) == PipelineState.VERIFIED) {
+                return PipelineState.VERIFIED;
             }
 
-            stateRepository.updateState(
-                    bookId, PipelineState.INGESTED, null
-            );
+            stateRepository.incrementAttempts(bookId);
 
-            // Step 2: Indexing
-            stateRepository.updateState(
-                    bookId, PipelineState.INDEXING, null
-            );
+            try {
+                stateRepository.updateState(
+                        bookId,
+                        PipelineState.INGESTING,
+                        null
+                );
 
-            serviceClient.indexBook(bookId);
+                serviceClient.ingestBook(bookId);
 
-            stateRepository.updateState(
-                    bookId, PipelineState.INDEXED, null
-            );
+                if (!serviceClient.isBookIngested(bookId)) {
+                    throw new IOException("Book ingestion not completed");
+                }
 
-            // Step 3: Search verification
-            if (!serviceClient.isBookIndexed(bookId)) {
-                throw new IOException("Book was not found in Search Service");
+                stateRepository.updateState(
+                        bookId,
+                        PipelineState.INGESTED,
+                        null
+                );
+
+                stateRepository.updateState(
+                        bookId,
+                        PipelineState.INDEXING,
+                        null
+                );
+
+                serviceClient.indexBook(bookId);
+
+                stateRepository.updateState(
+                        bookId,
+                        PipelineState.INDEXED,
+                        null
+                );
+
+                if (!serviceClient.isBookIndexed(bookId)) {
+                    throw new IOException(
+                            "Book was not found in Search Service"
+                    );
+                }
+
+                stateRepository.updateState(
+                        bookId,
+                        PipelineState.VERIFIED,
+                        null
+                );
+
+                return PipelineState.VERIFIED;
+
+            } catch (InterruptedException e) {
+                stateRepository.updateState(
+                        bookId,
+                        PipelineState.FAILED,
+                        "Processing interrupted"
+                );
+
+                Thread.currentThread().interrupt();
+                throw e;
+
+            } catch (IOException | RuntimeException e) {
+                stateRepository.updateState(
+                        bookId,
+                        PipelineState.FAILED,
+                        e.getMessage()
+                );
+
+                throw e;
             }
 
-            stateRepository.updateState(
-                    bookId, PipelineState.VERIFIED, null
+        } finally {
+            long endTime = System.currentTimeMillis();
+
+            System.out.println(
+                    "[CONCURRENCY] Book " + bookId +
+                            " - FINISHED at " + endTime +
+                            " - Duration: " + (endTime - startTime) + " ms"
             );
 
-        } catch (InterruptedException e) {
-
-            stateRepository.updateState(
-                    bookId, PipelineState.FAILED, "Process interrupted"
-            );
-
-            Thread.currentThread().interrupt();
-            throw e;
-
-        } catch (IOException | RuntimeException e) {
-
-            stateRepository.updateState(
-                    bookId, PipelineState.FAILED, e.getMessage()
-            );
-
-            throw e;
+            lock.unlock();
         }
     }
 
     public PipelineState getBookState(int bookId) {
-
         StateRepository.PipelineRecord record =
                 stateRepository.getRecord(bookId);
 

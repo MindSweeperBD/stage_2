@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Search Service" type="Application" factoryName="Application">
+    <envs>
+      <env name="DATAMART_PATH" value="book_datamart" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="com.mindsweeper.search.App" />
+    <module name="search-service" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
