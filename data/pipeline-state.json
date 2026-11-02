@@ -5,11 +5,19 @@
   },
   "999999": {
     "state": "FAILED",
-    "attempts": 1,
-    "lastError": "Ingestion failed: {\"error\":\"ingestion_failed\",\"message\":\"Source returned HTTP 404\"}"
+    "attempts": 3,
+    "lastError": "Ingestion failed: {\"message\":\"Source returned HTTP 404\",\"error\":\"ingestion_failed\"}"
   },
   "1343": {
     "state": "FAILED",
+    "attempts": 3
+  },
+  "1344": {
+    "state": "VERIFIED",
+    "attempts": 1
+  },
+  "1345": {
+    "state": "VERIFIED",
     "attempts": 1
   }
 }

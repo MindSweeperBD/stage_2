@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Indexing Service" type="Application" factoryName="Application">
+    <envs>
+      <env name="DATALAKE_PATH" value="book_datalake" />
+      <env name="DATAMART_PATH" value="book_datamart" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="com.mindsweeper.indexing.App" />
+    <module name="indexing-service" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
