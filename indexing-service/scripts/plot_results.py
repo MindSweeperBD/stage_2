@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Summarize JMH CSV output and generate PNG charts without inventing data."""
 from __future__ import annotations
 
 import argparse
@@ -39,17 +38,17 @@ def read_jmh_csv(input_dir: Path) -> list[dict[str, object]]:
                         f"Unexpected JMH CSV columns in {csv_path.name}: {list(raw.keys())}"
                     )
                 try:
-                    score = float(raw[score_key])  # type: ignore[index]
-                    threads = int(raw[threads_key])  # type: ignore[index]
+                    score = float(raw[score_key])
+                    threads = int(raw[threads_key])
                 except (TypeError, ValueError):
                     continue
-                benchmark = str(raw[benchmark_key]).split(".")[-1]  # type: ignore[index]
+                benchmark = str(raw[benchmark_key]).split(".")[-1]
                 rows.append({
                     "benchmark": benchmark,
-                    "mode": str(raw[mode_key]).strip(),  # type: ignore[index]
+                    "mode": str(raw[mode_key]).strip(),
                     "threads": threads,
                     "score": score,
-                    "unit": str(raw[unit_key]).strip(),  # type: ignore[index]
+                    "unit": str(raw[unit_key]).strip(),
                     "source_file": csv_path.name,
                 })
     return rows
