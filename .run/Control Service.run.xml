@@ -2,7 +2,6 @@
   <configuration default="false" name="Control Service" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="com.mindsweeper.control.ControlApp" />
     <module name="control-module" />
-    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
     <method v="2">
       <option name="Make" enabled="true" />
     </method>
