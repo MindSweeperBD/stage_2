@@ -53,7 +53,7 @@ public class IndexingBenchmark {
         public void setup() throws Exception {
             work = Files.createTempDirectory("mindsweeper-jmh-");
             datalake = work.resolve("book_datalake");
-            datamart = work.resolve("book_datamarts");
+            datamart = work.resolve("book_datamart");
             Files.createDirectories(datalake);
             service = new IndexingService(datalake, datamart);
             nextId = new AtomicInteger(20000);

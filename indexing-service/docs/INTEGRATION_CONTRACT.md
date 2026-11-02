@@ -8,7 +8,7 @@
 
 ## 1. Ingestion-to-indexing input contract
 
-The Indexing Service reads only the Ingestion Service datalake rooted at `DATALAKE_PATH` (default `book_datalake`). It does not read Stage 1's former `batch_datalake` path, external Gutenberg URLs, or another source.
+The Indexing Service reads only the Ingestion Service datalake rooted at `DATALAKE_PATH` (default `book_datalake`).
 
 ```text
 <DATALAKE_PATH>/
@@ -35,19 +35,19 @@ The exact HTTP schema is in `api/openapi.yaml`.
 
 ### `POST /index/update/{book_id}`
 
-No request body. `book_id` must be a positive 32-bit integer. The operation is synchronous; `200` means the metadata row and new monolithic postings have been published.
+No request body. `book_id` must be a positive integer. The operation is synchronous; `200` means the metadata row and new indexes have been published.
 
 ```json
 {
   "book_id": 1342,
   "index": "updated",
   "version": "<sha256-of-published-content>",
-  "indexed_at": "2026-10-31T12:00:00Z",
-  "unique_terms": 5300
+  "indexed_at": "2026-10-31T15:12:29.755064600Z",
+  "unique_terms": 6834
 }
 ```
 
-For unchanged data it returns `index: "already_indexed"`. The comparison checks the Stage 1 metadata record and the set of terms currently associated with that book. Repeated requests do not append duplicate IDs because postings are sets and `book_id` is a SQLite primary key.
+For unchanged data it returns `index: "already_indexed"`. The comparison checks the metadata record and the set of terms currently associated with that book. Repeated requests do not append duplicate IDs because indexes are sets and `book_id` is a SQLite primary key.
 
 Errors:
 
@@ -61,7 +61,7 @@ No request body. Scans only positive numeric directories directly below `DATALAK
 
 ```json
 {
-  "books_processed": 120,
+  "books_processed": 100,
   "skipped_incomplete": 2,
   "elapsed_time_ms": 35200,
   "elapsed_time": "35.200s",
@@ -87,9 +87,9 @@ The operation replaces all rows in `metadata.db` and the entire `inverted_index.
 
 `index_size_bytes` is the combined on-disk size of `metadata.db` and `inverted_index.json`. `index_size_MB` is calculated as MiB (`bytes / 1,048,576`) to keep the existing API field name. `index_version` is a SHA-256 digest of a deterministic representation of both datamarts; it is not a UUID. On startup, `last_update` is reconstructed from the latest modification time of the two datamart files, so it is an approximate persisted timestamp. If an interrupted publication marker exists at startup, the service reports `index_version: "recovery-required"` and `update_in_progress: true`; its in-memory book/term counts are not considered authoritative until rebuild succeeds.
 
-## 3. Stage 1 metadata schema reused
+## 3. Metadata schema
 
-The metadata table and columns match the Stage 1 `MetadataDatabase`:
+The metadata table follows this structure:
 
 ```sql
 CREATE TABLE IF NOT EXISTS books (
@@ -97,17 +97,14 @@ CREATE TABLE IF NOT EXISTS books (
     title TEXT NOT NULL,
     author TEXT NOT NULL,
     language TEXT NOT NULL,
+    year INTEGER,
     body_path TEXT NOT NULL
 );
 ```
 
-SQLite indexes are created for `author`, `title` and `language`. Updates use `INSERT OR REPLACE`, and rebuild deletes and reinserts the complete set in a transaction.
+SQLite indexes are created for `author`, `title`, `language` and `year`. Updates use `INSERT OR REPLACE`, and rebuild deletes and reinserts the complete set in a transaction.
 
-The Stage 1 code supplied for this change extracts only `Title:`, `Author:` and `Language:`. Missing fields are stored as empty strings. Language is kept as the text found in the header (for example, `English`), exactly as in Stage 1. There is no `year` column or year parser in the supplied Stage 1 implementation. Search Service must not assume a publication-year value exists; adding it requires an agreed schema change.
-
-## 4. Stage 1 monolithic inverted-index format
-
-Only `MonolithicInvertedIndexBuilder` is reused. MongoDB and the hierarchical index are intentionally not implemented.
+## 4. Inverted-index
 
 `inverted_index.json` has this shape:
 
@@ -119,16 +116,13 @@ Only `MonolithicInvertedIndexBuilder` is reused. MongoDB and the hierarchical in
 }
 ```
 
-The key is a normalized word. The value is a sorted list of book IDs in which that word appears. Each ID appears at most once per word; **term frequencies are not stored**. The Stage 1 text-normalization rules are preserved:
+The key is a normalized word. The value is a sorted list of book IDs in which that word appears. Each ID appears at most once per word; **term frequencies are not stored**.
 
 1. Read only `body.txt` using UTF-8.
 2. Convert to lowercase with `Locale.ROOT`.
-3. Replace runs of non-Unicode-letter/non-number characters with spaces (`[^\\p{L}\\p{N}]+`).
-4. Split on whitespace.
+4. Split on pattern (`[^\\p{L}\\p{N}]+`), which separates the element each time it encounters a character that is not a number or from Unicode.
 5. Keep words whose Java `String.length()` is greater than 1.
 6. Store distinct terms per book using set semantics.
-
-Title and author are stored in SQLite but are not added to the inverted index, matching the supplied Stage 1 `TextNormalizer`/`MonolithicInvertedIndexBuilder`.
 
 ## 5. Datamart paths and publication consistency
 
@@ -170,22 +164,18 @@ Java reader example (run the database query and JSON load inside the same `try` 
 
 ```java
 Path datamart = Path.of("book_datamarts");
-Path lockPath = datamart.resolve(".index.lock");
-Path pendingPath = datamart.resolve(".indexing-in-progress");
+DatamartRepository repository = new DatamartRepository(datamart);
 
-try (FileChannel channel = FileChannel.open(lockPath,
-        StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
-     FileLock lock = channel.lock(0L, Long.MAX_VALUE, true)) {
+try (DatamartRepository.AccessLock lock = repository.acquireReadLock()) {
 
-    if (Files.exists(pendingPath)) {
-        throw new IOException("Index publication is not ready; retry later");
-    }
+    Map<Integer, BookMetadata> metadata = repository.loadMetadata();
+    Map<String, Set<Integer>> invertedIndex = repository.loadInvertedIndex();
 
-    // Load metadata.db and inverted_index.json here, before releasing the lock.
+    // Use metadata and invertedIndex here.
 }
 ```
 
-The Indexing Service uses an in-process fair `ReentrantLock` to serialize its own request threads and an OS file lock to coordinate the writer with other processes on the same machine. Stage 2 assumes one Indexing Service writer process for a datamart. Do not run multiple indexing writer replicas against the same datamart unless writer ownership and reload semantics are extended.
+The Indexing Service uses an in-process fair `ReentrantLock` to serialize its own request threads and an OS file lock to coordinate the writer with other processes on the same machine.
 
 If `.indexing-in-progress` remains after a process crash, Control Module/operator must call `POST /index/rebuild`. Individual `POST /index/update/{book_id}` requests are rejected while recovery is pending. A failed rebuild while recovering leaves the marker in place; readers remain blocked until a rebuild completes successfully.
 
@@ -195,11 +185,11 @@ If `.indexing-in-progress` remains after a process crash, Control Module/operato
 - The OS file lock protects the two datamart outputs against readers in other local processes.
 - `ConcurrentHashMap`/per-book locking is not used here; publication updates a global monolithic index.
 - A SQLite primary key and `INSERT OR REPLACE` prevent duplicate metadata rows.
-- Postings use sets of book IDs, so the same ID is not duplicated for a term.
+- Inverted index use sets of book IDs, so the same ID is not duplicated for a term.
 - Changed book content is processed by removing its old ID from all postings, deleting empty terms, and adding its new distinct words.
 - An interrupted publication leaves a marker; Search must fail closed until rebuild.
 
-The lock files coordinate only one host. Stage 3 needs shared storage and a distributed ownership/locking or transactional mechanism.
+The lock files coordinate only one host.
 
 ## 7. Configuration and caller behavior
 
@@ -207,7 +197,7 @@ The lock files coordinate only one host. Stage 3 needs shared storage and a dist
 |---|---|---|
 | `INDEXING_PORT` | `7002` | HTTP port. |
 | `DATALAKE_PATH` | `book_datalake` | Ingestion Service datalake root. |
-| `DATAMART_PATH` | `book_datamarts` | Directory containing the two datamarts. |
+| `DATAMART_PATH` | `book_datamart` | Directory containing the two datamarts. |
 
 Callers should use a finite HTTP timeout. A timeout does not prove that the operation was cancelled; a safe retry is to query status or repeat the idempotent update request. The caller must not index a book before Ingestion Service confirms it is available.
 

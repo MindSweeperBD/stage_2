@@ -1,18 +1,15 @@
-# Indexing benchmark results
+# Indexing Service — Benchmark Results
 
-No measured CSV/PNG results are bundled yet. Execute the JMH benchmarks on the group's target host; this repository does not contain simulated values.
+## Host Environment
+- **System:** `Windows 11 Home 25H2`
+- **Processor:** `11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz`
+- **Python Version:** `3.14.0`
 
-From the project root:
+## JMH Component Microbenchmarks (`jmh-results.csv`)
 
-```bash
-bash scripts/run_benchmarks.sh
-```
-
-The script runs 1, 2 and 4 JMH worker-thread configurations (one process replica each), saves the raw JMH CSV files and generates:
-
-- `indexing_summary.csv`
-- `average_time.png`
-- `throughput.png`
-- this README with the actual measured scores and host information
-
-Benchmarks cover the end-to-end `updateBook` operation (read from `book_datalake`, extract Stage 1 metadata, tokenize, update postings, write SQLite metadata and JSON index) and isolated tokenization/metadata-extraction operations. Record CPU, RAM, storage, OS, Java version and JVM settings. Thread count is not process-replica count.
+| Operation | Mode | Threads | Samples | Score           | Error ± (99.9%) |
+|-----------|------|---------|---------|-----------------|-----------------|
+| `updateBookThroughput` | `thrpt` | 1 | 10 | 18.885523 ops/s | ± 0.683478      |
+| `extractMetadata` | `avgt` | 1 | 10 | 0.001444 ms/op  | ± 0.000036      |
+| `normalizeText` | `avgt` | 1 | 10 | 0.784930 ms/op  | ± 0.011507      |
+| `updateBook` | `avgt` | 1 | 10 | 44.184120 ms/op | ± 7.158716      |
