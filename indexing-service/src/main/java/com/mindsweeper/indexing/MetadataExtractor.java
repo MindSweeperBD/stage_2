@@ -35,7 +35,6 @@ public final class MetadataExtractor {
         if (matcher.find()) {
             return Integer.parseInt(matcher.group(1));
         }
-
         return null;
     }
 }

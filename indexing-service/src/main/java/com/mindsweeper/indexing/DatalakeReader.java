@@ -16,30 +16,18 @@ public final class DatalakeReader {
         this.root = root.toAbsolutePath().normalize();
     }
 
-    public Path root() {
-        return root;
-    }
-
     public BookDocument readReadyBook(int id) throws IOException {
         if (id <= 0) {
             throw new IllegalArgumentException("book_id must be positive");
         }
 
         Path directory = root.resolve(Integer.toString(id)).normalize();
-        if (!root.equals(directory.getParent())) {
-            throw new IllegalArgumentException("Invalid book_id path");
-        }
 
         Path marker = directory.resolve(".complete");
         Path headerFile = directory.resolve("header.txt");
         Path bodyFile = directory.resolve("body.txt");
 
-        if (!Files.isRegularFile(marker)
-                || !Files.isRegularFile(headerFile)
-                || !Files.isRegularFile(bodyFile)) {
-            throw new BookNotReadyException(
-                    "Book " + id + " is not ready: .complete, header.txt and body.txt are required");
-        }
+        bookIsReady(id, marker, headerFile, bodyFile);
 
         BasicFileAttributes markerBefore = Files.readAttributes(marker, BasicFileAttributes.class);
         BasicFileAttributes headerBefore = Files.readAttributes(headerFile, BasicFileAttributes.class);
@@ -56,11 +44,7 @@ public final class DatalakeReader {
         BasicFileAttributes headerAfter = Files.readAttributes(headerFile, BasicFileAttributes.class);
         BasicFileAttributes bodyAfter = Files.readAttributes(bodyFile, BasicFileAttributes.class);
 
-        if (!sameFileVersion(markerBefore, markerAfter)
-                || !sameFileVersion(headerBefore, headerAfter)
-                || !sameFileVersion(bodyBefore, bodyAfter)) {
-            throw new BookNotReadyException("Book " + id + " changed while it was being read");
-        }
+        contentHasChanged(id, markerBefore, markerAfter, headerBefore, headerAfter, bodyBefore, bodyAfter);
 
         if (body.isBlank()) {
             throw new BookNotReadyException("Book " + id + " has an empty body");
@@ -72,6 +56,23 @@ public final class DatalakeReader {
                 body.strip(),
                 bodyFile.toAbsolutePath().normalize().toString()
         );
+    }
+
+    private static void bookIsReady(int id, Path marker, Path headerFile, Path bodyFile) {
+        if (!Files.isRegularFile(marker)
+                || !Files.isRegularFile(headerFile)
+                || !Files.isRegularFile(bodyFile)) {
+            throw new BookNotReadyException(
+                    "Book " + id + " is not ready: .complete, header.txt and body.txt are required");
+        }
+    }
+
+    private static void contentHasChanged(int id, BasicFileAttributes markerBefore, BasicFileAttributes markerAfter, BasicFileAttributes headerBefore, BasicFileAttributes headerAfter, BasicFileAttributes bodyBefore, BasicFileAttributes bodyAfter) {
+        if (!sameFileVersion(markerBefore, markerAfter)
+                || !sameFileVersion(headerBefore, headerAfter)
+                || !sameFileVersion(bodyBefore, bodyAfter)) {
+            throw new BookNotReadyException("Book " + id + " changed while it was being read");
+        }
     }
 
     public List<Integer> listCandidateBookIds() throws IOException {

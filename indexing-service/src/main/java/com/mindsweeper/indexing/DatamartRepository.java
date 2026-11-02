@@ -33,10 +33,6 @@ public final class DatamartRepository {
         metadataDatabase.createDatabase();
     }
 
-    public Path root() {
-        return root;
-    }
-
     public Path metadataPath() {
         return metadataDatabase.databasePath();
     }
@@ -92,90 +88,158 @@ public final class DatamartRepository {
     public void publish(Collection<BookMetadata> metadata,
                         Map<String, Set<Integer>> invertedIndex,
                         boolean replaceAll) throws IOException {
+
         Files.createDirectories(root);
-        Path indexTemp = Files.createTempFile(root, "inverted-index-", ".tmp");
-        Path backup = null;
-        boolean oldIndexExists = Files.isRegularFile(invertedIndexPath());
-        boolean wasAlreadyPending = publicationPending();
-        boolean markerWritten = false;
-        boolean indexReplaced = false;
-        boolean committed = false;
-        boolean rollbackSucceeded = true;
-        boolean restored = true;
+
+        Path indexTemp = createTemporaryIndex(invertedIndex);
+        Path backup = createBackupIfNeeded();
+        PublicationState state = new PublicationState(
+                backup != null,
+                publicationPending()
+        );
 
         try {
-            Files.writeString(indexTemp, invertedIndexRepository.toJson(invertedIndex),
-                    StandardCharsets.UTF_8, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
-            if (oldIndexExists) {
-                backup = Files.createTempFile(root, "inverted-index-backup-", ".json");
-                Files.copy(invertedIndexPath(), backup, StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            Files.writeString(pendingMarker,
-                    "publication in progress; readers must wait for a successful rebuild\n",
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.WRITE,
-                    StandardOpenOption.TRUNCATE_EXISTING);
-            markerWritten = true;
-
-            try (Connection connection = metadataDatabase.openConnection()) {
-                connection.setAutoCommit(false);
-                try {
-                    metadataDatabase.apply(connection, metadata, replaceAll);
-                    moveAtomically(indexTemp, invertedIndexPath());
-                    indexReplaced = true;
-                    connection.commit();
-                    committed = true;
-                } catch (IOException | SQLException | RuntimeException failure) {
-                    try {
-                        connection.rollback();
-                    } catch (SQLException rollbackError) {
-                        rollbackSucceeded = false;
-                        failure.addSuppressed(rollbackError);
-                    }
-                    throw failure;
-                }
-            } catch (IOException | SQLException | RuntimeException failure) {
-                if (!committed && indexReplaced) {
-                    try {
-                        if (oldIndexExists && backup != null && Files.exists(backup)) {
-                            moveAtomically(backup, invertedIndexPath());
-                            backup = null;
-                        } else {
-                            Files.deleteIfExists(invertedIndexPath());
-                        }
-                    } catch (IOException restoreError) {
-                        restored = false;
-                        failure.addSuppressed(restoreError);
-                    }
-                }
-
-                if (markerWritten && rollbackSucceeded && restored && !wasAlreadyPending) {
-                    try {
-                        Files.deleteIfExists(pendingMarker);
-                        markerWritten = false;
-                    } catch (IOException markerError) {
-                        failure.addSuppressed(markerError);
-                    }
-                }
-
-                if (failure instanceof IOException ioException) {
-                    throw ioException;
-                }
-                if (failure instanceof RuntimeException runtimeException) {
-                    throw runtimeException;
-                }
-                throw new IOException("Could not publish the datamart", failure);
-            }
-
-            Files.deleteIfExists(pendingMarker);
-            markerWritten = false;
+            writePendingMarker();
+            executePublication(metadata, replaceAll, indexTemp, backup, state);
+            removePendingMarker();
         } finally {
-            Files.deleteIfExists(indexTemp);
-            if (backup != null && !publicationPending()) {
-                Files.deleteIfExists(backup);
+            cleanupTemporaryFiles(indexTemp, backup);
+        }
+    }
+
+    private Path createTemporaryIndex(
+            Map<String, Set<Integer>> invertedIndex) throws IOException {
+
+        Path temp = Files.createTempFile(root, "inverted-index-", ".tmp");
+
+        Files.writeString(
+                temp,
+                invertedIndexRepository.toJson(invertedIndex),
+                StandardCharsets.UTF_8,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.TRUNCATE_EXISTING
+        );
+        return temp;
+    }
+
+    private Path createBackupIfNeeded() throws IOException {
+
+        if (!Files.isRegularFile(invertedIndexPath())) {
+            return null;
+        }
+
+        Path backup = Files.createTempFile(
+                root,
+                "inverted-index-backup-",
+                ".json"
+        );
+        Files.copy(
+                invertedIndexPath(),
+                backup,
+                StandardCopyOption.REPLACE_EXISTING
+        );
+        return backup;
+    }
+
+    private void writePendingMarker() throws IOException {
+
+        Files.writeString(
+                pendingMarker,
+                "publication in progress; readers must wait for a successful rebuild\n",
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.TRUNCATE_EXISTING
+        );
+    }
+
+    private void executePublication(
+            Collection<BookMetadata> metadata,
+            boolean replaceAll,
+            Path indexTemp,
+            Path backup,
+            PublicationState state) throws IOException {
+
+        boolean indexReplaced = false;
+
+        try (Connection connection = metadataDatabase.openConnection()) {
+
+            connection.setAutoCommit(false);
+
+            try {
+                metadataDatabase.apply(connection, metadata, replaceAll);
+
+                moveAtomically(indexTemp, invertedIndexPath());
+                indexReplaced = true;
+
+                connection.commit();
+
+            } catch (IOException | SQLException | RuntimeException failure) {
+
+                rollback(connection, failure);
+
+                if (indexReplaced) {
+                    restoreIndex(backup, failure);
+                }
+                cleanupPendingMarkerAfterFailure(state, failure);
+                throwPublicationException(failure);
             }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void rollback(Connection connection, Exception failure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackError) {
+            failure.addSuppressed(rollbackError);
+        }
+    }
+
+    private void restoreIndex(Path backup, Exception failure) {
+        try {
+            if (backup != null && Files.exists(backup)) {
+                moveAtomically(backup, invertedIndexPath());
+            } else {
+                Files.deleteIfExists(invertedIndexPath());
+            }
+        } catch (IOException restoreError) {
+            failure.addSuppressed(restoreError);
+        }
+    }
+
+    private void cleanupPendingMarkerAfterFailure(PublicationState state, Exception failure) {
+        if (state.wasAlreadyPending()) { return; }
+        try {
+            removePendingMarker();
+        } catch (IOException markerError) {
+            failure.addSuppressed(markerError);
+        }
+    }
+
+    private void throwPublicationException(Exception failure) throws IOException {
+        if (failure instanceof IOException ioException) {
+            throw ioException;
+        }
+        if (failure instanceof RuntimeException runtimeException) {
+            throw runtimeException;
+        }
+        throw new IOException(
+                "Could not publish the datamart",
+                failure
+        );
+    }
+
+    private void removePendingMarker() throws IOException {
+        Files.deleteIfExists(pendingMarker);
+    }
+
+    private void cleanupTemporaryFiles(Path indexTemp, Path backup) throws IOException {
+        Files.deleteIfExists(indexTemp);
+
+        if (backup != null && !publicationPending()) {
+            Files.deleteIfExists(backup);
         }
     }
 
@@ -234,5 +298,10 @@ public final class DatamartRepository {
                 channel.close();
             }
         }
+    }
+
+    private record PublicationState(
+            boolean hadPreviousIndex,
+            boolean wasAlreadyPending) {
     }
 }

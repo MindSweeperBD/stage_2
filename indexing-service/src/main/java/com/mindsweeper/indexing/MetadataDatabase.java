@@ -66,20 +66,24 @@ public final class MetadataDatabase {
 
         try (PreparedStatement statement = connection.prepareStatement(UPSERT)) {
             for (BookMetadata book : metadata) {
-                statement.setInt(1, book.bookId());
-                statement.setString(2, book.title());
-                statement.setString(3, book.author());
-                statement.setString(4, book.language());
-                if (book.year() == null) {
-                    statement.setNull(5, java.sql.Types.INTEGER);
-                } else {
-                    statement.setInt(5, book.year());
-                }
-                statement.setString(6, book.bodyPath());
-                statement.addBatch();
+                insertOrUpdateBook(book, statement);
             }
             statement.executeBatch();
         }
+    }
+
+    private static void insertOrUpdateBook(BookMetadata book, PreparedStatement statement) throws SQLException {
+        statement.setInt(1, book.bookId());
+        statement.setString(2, book.title());
+        statement.setString(3, book.author());
+        statement.setString(4, book.language());
+        if (book.year() == null) {
+            statement.setNull(5, java.sql.Types.INTEGER);
+        } else {
+            statement.setInt(5, book.year());
+        }
+        statement.setString(6, book.bodyPath());
+        statement.addBatch();
     }
 
     public Map<Integer, BookMetadata> loadAll() throws SQLException {
@@ -93,17 +97,21 @@ public final class MetadataDatabase {
              PreparedStatement statement = connection.prepareStatement(sql);
              ResultSet rows = statement.executeQuery()) {
             while (rows.next()) {
-                BookMetadata metadata = new BookMetadata(
-                        rows.getInt("book_id"),
-                        rows.getString("title"),
-                        rows.getString("author"),
-                        rows.getString("language"),
-                        rows.getInt("year"),
-                        rows.getString("body_path")
-                );
-                result.put(metadata.bookId(), metadata);
+                insertBookMetadata(rows, result);
             }
         }
         return result;
+    }
+
+    private static void insertBookMetadata(ResultSet rows, Map<Integer, BookMetadata> result) throws SQLException {
+        BookMetadata metadata = new BookMetadata(
+                rows.getInt("book_id"),
+                rows.getString("title"),
+                rows.getString("author"),
+                rows.getString("language"),
+                rows.getInt("year"),
+                rows.getString("body_path")
+        );
+        result.put(metadata.bookId(), metadata);
     }
 }

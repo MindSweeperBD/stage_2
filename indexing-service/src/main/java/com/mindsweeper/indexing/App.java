@@ -136,7 +136,7 @@ public final class App {
             }
         } catch (NumberFormatException ignored) {
         }
-        throw new IllegalArgumentException("book_id must be a positive 32-bit integer");
+        throw new IllegalArgumentException("book_id must be a positive integer");
     }
 
     private static String safeMessage(Exception e) {

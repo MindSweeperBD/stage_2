@@ -5,17 +5,13 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
-public final class MonolithicInvertedIndexBuilder {
+public final class InvertedIndexBuilder {
     private final Map<String, Set<Integer>> index = new TreeMap<>();
 
     public void load(Map<String, Set<Integer>> existingIndex) {
         index.clear();
         existingIndex.forEach((term, bookIds) ->
                 index.put(term, new TreeSet<>(bookIds)));
-    }
-
-    public void processBook(BookMetadata metadata, String body) {
-        processBook(metadata, TextNormalizer.getWordsList(body));
     }
 
     public void processBook(BookMetadata metadata, Set<String> words) {
@@ -40,9 +36,5 @@ public final class MonolithicInvertedIndexBuilder {
         Map<String, Set<Integer>> copy = new TreeMap<>();
         index.forEach((term, ids) -> copy.put(term, new TreeSet<>(ids)));
         return copy;
-    }
-
-    public int getNumberOfTerms() {
-        return index.size();
     }
 }

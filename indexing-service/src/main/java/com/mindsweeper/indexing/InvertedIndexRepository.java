@@ -34,13 +34,13 @@ public final class InvertedIndexRepository {
         if (!Files.isRegularFile(indexPath)) {
             return result;
         }
+        TreeMap<String, List<Integer>> serialized = getSerialized();
 
-        TreeMap<String, List<Integer>> serialized = gson.fromJson(
-                Files.readString(indexPath, StandardCharsets.UTF_8), JSON_TYPE);
-        if (serialized == null) {
-            throw new IOException("Inverted index JSON is empty or invalid: " + indexPath);
-        }
+        extractAndFormatInvertedIndex(serialized, result);
+        return result;
+    }
 
+    private void extractAndFormatInvertedIndex(TreeMap<String, List<Integer>> serialized, Map<String, Set<Integer>> result) throws IOException {
         for (Map.Entry<String, List<Integer>> entry : serialized.entrySet()) {
             if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null) {
                 throw new IOException("Invalid term or postings in " + indexPath);
@@ -48,7 +48,7 @@ public final class InvertedIndexRepository {
             Set<Integer> ids = new TreeSet<>();
             for (Integer id : entry.getValue()) {
                 if (id == null || id <= 0) {
-                    throw new IOException("Invalid book ID in postings for term: " + entry.getKey());
+                    throw new IOException("Invalid book ID in inverted index for term: " + entry.getKey());
                 }
                 ids.add(id);
             }
@@ -56,7 +56,15 @@ public final class InvertedIndexRepository {
                 result.put(entry.getKey(), ids);
             }
         }
-        return result;
+    }
+
+    private TreeMap<String, List<Integer>> getSerialized() throws IOException {
+        TreeMap<String, List<Integer>> serialized = gson.fromJson(
+                Files.readString(indexPath, StandardCharsets.UTF_8), JSON_TYPE);
+        if (serialized == null) {
+            throw new IOException("Inverted index JSON is empty or invalid: " + indexPath);
+        }
+        return serialized;
     }
 
     String toJson(Map<String, Set<Integer>> index) {

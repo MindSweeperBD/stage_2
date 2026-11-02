@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
@@ -45,7 +46,7 @@ public final class IndexingService {
 
     public UpdateResult updateBook(int bookId) throws IOException {
         if (bookId <= 0) {
-            throw new IllegalArgumentException("book_id must be a positive 32-bit integer");
+            throw new IllegalArgumentException("book_id must be a positive integer");
         }
 
         activeMutations.incrementAndGet();
@@ -55,36 +56,18 @@ public final class IndexingService {
                 throw new IOException("A previous datamart publication was interrupted; run /index/rebuild before updating individual books");
             }
 
-            DatalakeReader.BookDocument source = datalake.readReadyBook(bookId);
-            BookMetadata metadata = metadataExtractor.extract(
-                    bookId, source.header(), source.bodyPath());
-            Set<String> words = TextNormalizer.getWordsList(source.body());
-
-            Map<Integer, BookMetadata> books = new TreeMap<>(repository.loadMetadata());
-            Map<String, Set<Integer>> existingPostings = repository.loadInvertedIndex();
-
-            BookMetadata existing = books.get(bookId);
-            if (metadata.equals(existing) && wordsForBook(existingPostings, bookId).equals(words)) {
-                IndexState state = createState(books, existingPostings, current.get().lastUpdate());
+            BookContent content = getBookContent(bookId);
+            if (content.metadata().equals(content.existingMetadata())
+                    && wordsForBook(content.existingWords(), bookId).equals(content.words())) {
+                IndexState state = createState(content.books(), content.existingWords(), current.get().lastUpdate());
                 current.set(state);
                 return new UpdateResult(bookId, "already_indexed", state.version(),
-                        state.lastUpdate(), words.size());
+                        state.lastUpdate(), content.words().size());
             }
-
-            MonolithicInvertedIndexBuilder builder = new MonolithicInvertedIndexBuilder();
-            builder.load(existingPostings);
-            builder.removeBook(bookId);
-            builder.processBook(metadata, words);
-            books.put(bookId, metadata);
-            Map<String, Set<Integer>> postings = builder.indexView();
-
-            repository.publish(List.of(metadata), postings, false);
-            String indexedAt = Instant.now().toString();
-            IndexState next = createState(books, postings, indexedAt);
-            current.set(next);
+            IndexState next = modifyBook(bookId, content.existingWords(), content.metadata(), content.words(), content.books());
 
             return new UpdateResult(bookId, "updated", next.version(),
-                    next.lastUpdate(), words.size());
+                    next.lastUpdate(), content.words().size());
         } catch (java.sql.SQLException e) {
             throw new IOException("Could not update metadata.db", e);
         } finally {
@@ -93,13 +76,41 @@ public final class IndexingService {
         }
     }
 
+    private BookContent getBookContent(int bookId) throws IOException, SQLException {
+        DatalakeReader.BookDocument source = datalake.readReadyBook(bookId);
+        BookMetadata metadata = metadataExtractor.extract(
+                bookId, source.header(), source.bodyPath());
+        Set<String> words = TextNormalizer.getWordsList(source.body());
+
+        Map<Integer, BookMetadata> books = new TreeMap<>(repository.loadMetadata());
+        Map<String, Set<Integer>> existingPostings = repository.loadInvertedIndex();
+
+        BookMetadata existing = books.get(bookId);
+        return new BookContent(metadata, words, books, existingPostings, existing);
+    }
+
+    private IndexState modifyBook(int bookId, Map<String, Set<Integer>> existingPostings, BookMetadata metadata, Set<String> words, Map<Integer, BookMetadata> books) throws IOException {
+        InvertedIndexBuilder builder = new InvertedIndexBuilder();
+        builder.load(existingPostings);
+        builder.removeBook(bookId);
+        builder.processBook(metadata, words);
+        books.put(bookId, metadata);
+        Map<String, Set<Integer>> postings = builder.indexView();
+
+        repository.publish(List.of(metadata), postings, false);
+        String indexedAt = Instant.now().toString();
+        IndexState next = createState(books, postings, indexedAt);
+        current.set(next);
+        return next;
+    }
+
     public RebuildResult rebuild() throws IOException {
         activeMutations.incrementAndGet();
         updateLock.lock();
         long started = System.nanoTime();
         try (DatamartRepository.AccessLock ignored = repository.acquireWriteLock()) {
             TreeMap<Integer, BookMetadata> books = new TreeMap<>();
-            MonolithicInvertedIndexBuilder builder = new MonolithicInvertedIndexBuilder();
+            InvertedIndexBuilder builder = new InvertedIndexBuilder();
             int skippedIncomplete = 0;
 
             for (int id : datalake.listCandidateBookIds()) {
@@ -110,19 +121,14 @@ public final class IndexingService {
                     skippedIncomplete++;
                     continue;
                 }
-
-                BookMetadata metadata = metadataExtractor.extract(
-                        id, source.header(), source.bodyPath());
-                Set<String> words = TextNormalizer.getWordsList(source.body());
-                books.put(id, metadata);
-                builder.processBook(metadata, words);
+                rebuildValidBook(id, source, books, builder);
             }
 
-            Map<String, Set<Integer>> postings = builder.indexView();
-            repository.publish(books.values(), postings, true);
+            Map<String, Set<Integer>> invertedIndex = builder.indexView();
+            repository.publish(books.values(), invertedIndex, true);
             long elapsedMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
             String indexedAt = Instant.now().toString();
-            IndexState next = createState(books, postings, indexedAt);
+            IndexState next = createState(books, invertedIndex, indexedAt);
             current.set(next);
 
             return new RebuildResult(books.size(), skippedIncomplete, elapsedMs,
@@ -132,6 +138,14 @@ public final class IndexingService {
             updateLock.unlock();
             activeMutations.decrementAndGet();
         }
+    }
+
+    private void rebuildValidBook(int id, DatalakeReader.BookDocument source, TreeMap<Integer, BookMetadata> books, InvertedIndexBuilder builder) {
+        BookMetadata metadata = metadataExtractor.extract(
+                id, source.header(), source.bodyPath());
+        Set<String> words = TextNormalizer.getWordsList(source.body());
+        books.put(id, metadata);
+        builder.processBook(metadata, words);
     }
 
     public IndexStatus status() throws IOException {
@@ -191,6 +205,21 @@ public final class IndexingService {
         if (books.isEmpty() && index.isEmpty()) {
             return "none";
         }
+        StringBuilder canonical = getCanonical(books, index);
+        try {
+            return getHashCode(canonical);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is not available", impossible);
+        }
+    }
+
+    private static String getHashCode(StringBuilder canonical) throws NoSuchAlgorithmException {
+        byte[] hash = MessageDigest.getInstance("SHA-256")
+                .digest(canonical.toString().getBytes(StandardCharsets.UTF_8));
+        return HexFormat.of().formatHex(hash);
+    }
+
+    private static StringBuilder getCanonical(Map<Integer, BookMetadata> books, Map<String, Set<Integer>> index) {
         StringBuilder canonical = new StringBuilder();
         books.forEach((id, metadata) -> canonical.append(id).append('|')
                 .append(metadata.title()).append('|')
@@ -202,23 +231,26 @@ public final class IndexingService {
             ids.forEach(id -> canonical.append(id).append(','));
             canonical.append('\n');
         });
-        try {
-            byte[] hash = MessageDigest.getInstance("SHA-256")
-                    .digest(canonical.toString().getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash);
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 is not available", impossible);
-        }
+        return canonical;
     }
 
-    private static Set<String> wordsForBook(Map<String, Set<Integer>> postings, int bookId) {
+    private static Set<String> wordsForBook(Map<String, Set<Integer>> invertedIndex, int bookId) {
         Set<String> words = new TreeSet<>();
-        postings.forEach((term, ids) -> {
+        invertedIndex.forEach((term, ids) -> {
             if (ids.contains(bookId)) {
                 words.add(term);
             }
         });
         return words;
+    }
+
+    private record BookContent(
+            BookMetadata metadata,
+            Set<String> words, Map<Integer,
+            BookMetadata> books, Map<String,
+            Set<Integer>> existingWords,
+            BookMetadata existingMetadata
+    ) {
     }
 
     public record UpdateResult(int bookId, String index, String version,
