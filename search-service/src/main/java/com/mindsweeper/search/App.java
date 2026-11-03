@@ -153,7 +153,7 @@ public class App {
         );
 
         Path datamartRoot = Path.of(
-                System.getenv().getOrDefault("DATAMART_PATH", "datamart")
+                System.getenv().getOrDefault("DATAMART_PATH", "book_datamart")
         );
 
         Path metadataDbPath = Path.of(
