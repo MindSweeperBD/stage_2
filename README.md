@@ -3,11 +3,11 @@
 
 **Big Data · Grado en Ciencia e Ingeniería de Datos · Universidad de Las Palmas de Gran Canaria**
 
-Mindsweeper is a Java 17 service-oriented search engine for Project Gutenberg books. Stage 2 runs **four separate processes on one machine**: Ingestion (port 7001), Indexing (7002), Search (7003), and a Control Module (7004). The services communicate over HTTP and share filesystem-based data layers. Stage 3 will address multi-host deployment.
+Mindsweeper is a Java 17 service-oriented search engine for Project Gutenberg books. Stage 2 runs **four separate processes on one device**: Ingestion (port 7001), Indexing (7002), Search (7003), and a Control Module (7004). The offerings communicate over HTTP and proportion filesystem-primarily based data layers. Stage 3 will address multi-host deployment.
 
 ## 1. Prerequisites and repository layout
 
-Install **JDK 17+**, **Apache Maven**, and **curl**. Bash is needed for the provided API-check and indexing benchmark scripts; Python 3 is needed for plotting and storage reports. Internet access is required to download books from Project Gutenberg and to resolve Maven dependencies on first build.
+Install **JDK 17+**, **Apache Maven**, and **curl**. Bash is needed for the provided API-test and indexing benchmark scripts; Python 3 is needed for plotting and garage reports. Internet get right of entry to is needed to download books from Project Gutenberg and to remedy Maven dependencies on first construct.
 
 ```text
 stage_2-main/
@@ -50,7 +50,7 @@ If a build fails, inspect its Maven output; the exact build and runtime behavior
 
 ## 3. Configure and run on a single machine
 
-**Important:** The default relative paths are resolved against each process's **working directory**. To avoid creating separate datalakes/datamarts, configure **absolute paths shared by all processes**. The example below uses the repository root as the working directory and sets absolute paths explicitly.
+**Pivotal:** The default relative paths are resolved towards every technique's **worling directory**. To keep away from developing separate datalakes/datamarts, configure **absolute paths shared with the aid of all techniques**. The example beneath uses the repository root because the working listing and units absolute paths explicitly.
 
 Open a terminal in the repository root, then create a shared configuration file:
 
@@ -115,9 +115,9 @@ done
 | `SEARCH_URL` | Control | `http://localhost:7003` | Search verification endpoint |
 | `GUTENBERG_BASE_URL` | Ingestion | `https://www.gutenberg.org/cache/epub/` | Book source base URL |
 
-**Replica counts:** The application does not expose a `REPLICAS` setting or a replica launcher. One instance of each component is the documented baseline. Additional processes would require different listening ports and careful handling of shared files and Control state; they are **not** validated by this README.
+**Replica counts:** The utility does no longer disclose a `REPLICAS` putting or a duplicate launcher. One example of each element is the documented baseline. Additional tactics could require one-of-a-kind listening ports and cautious managing of shared documents and Control kingdom; they may be **now not** demonstrated through this README.
 
-**Thread settings:** Javalin's server thread pools are not exposed as an application environment-variable setting in these `App` classes. The repository does provide `JMH_THREADS_LIST` for **indexing benchmark threads**, not for production HTTP worker threads. The benchmark script defaults to `1 2 4`. Do not interpret benchmark thread counts as process replica counts.
+**Thread settings:** Javalin's server thread swimming pools aren't exposed as an application surroundings-variable setting in those `App` classes. The repository does provide `JMH_THREADS_LIST` for **indexing benchmark threads**, no longer for production HTTP employee threads. The benchmark script defaults to `1 2 4`. Do now not interpret benchmark thread counts as procedure replica counts.
 
 ## 5. End-to-end use cases and test queries
 
@@ -155,7 +155,7 @@ Query results depend on which books have been ingested and indexed. The last com
 | Search | [`search-service/api/openapi.yaml`](search-service/api/openapi.yaml) | `GET /search`, `GET /books/{book_id}`, `GET /search/filters`, `GET /status` | HTTP clients, Control |
 | Control | Java implementation: `control-module/src/main/java/com/mindsweeper/control/ControlApp.java` | `POST /process/{book_id}`, `GET /state/{book_id}`, `GET /status` | Operators / integration clients |
 
-The YAML files contain the complete HTTP contract details for the three services. **No Control OpenAPI YAML file was found in the supplied ZIP**; its endpoints are documented here from `ControlApp.java`. Non-HTTP contracts include the shared datalake completion marker `.complete`, the datamart files, and Control's JSON state file. All four processes run on the same Stage 2 host.
+The YAML documents incorporate the whole HTTP contract information for the 3 services. **No Control OpenAPI YAML file turned into located within the furnished ZIP**; its endpoints are documented here from `ControlApp.Java`. Non-HTTP contracts encompass the shared datalake of completion marker `.Entire`, the datamart files, and Control's JSON nation report. All 4 processes run at the same Stage 2 host.
 
 ## 6. Interface validation and unit tests
 
@@ -167,9 +167,9 @@ INDEXING_BASE_URL=http://localhost:7002 BOOK_ID=1342 bash indexing-service/scrip
 bash search-service/scripts/test-api.sh http://localhost:7003
 ```
 
-The Indexing check assumes book 1342 has already been ingested. Its script **modifies the index** and runs a full rebuild. The Ingestion script performs a real Gutenberg download and therefore needs internet access. Search's script checks normal and invalid queries; its output depends on the available index. Control can be smoke-tested with the `/status`, `/process/{book_id}`, and `/state/{book_id}` commands in Section 5; no separate Control validation shell script is present.
+The Indexing check assumes book 1342 has already been ingested. Its script **modifies the index** and runs a complete rebuild. The Ingestion script performs a actual Gutenberg down load and consequently needs net get entry to. Search's script assessments regular and invalid queries; its output depends at the to be had index. Control may be smoke-examined with the `/popularity`, `/technique/book_id`, and `/state/book_id` instructions in Section five; no separate Control validation shell script is present.
 
-Run Java tests from each service directory with `mvn test`. Unit/API tests are located under each module's `src/test/java/` directory. These checks exercise behavior; the existence of scripts does not, by itself, prove they pass in every environment.
+Run Java checks from every provider directory with `mvn test`. Unit/API tests are located under every module's `src/take a look at/java/` directory. These checks exercise conduct; the lifestyles of scripts does now not, by itself, show they bypass in each surroundings.
 
 ## 7. Benchmarks and results
 
@@ -181,9 +181,9 @@ Benchmark source files are under each service's `src/test/java/` directory; outp
 (cd indexing-service && JMH_THREADS_LIST='1 2 4' bash scripts/run_benchmarks.sh)
 ```
 
-The script compiles tests, builds the test classpath, invokes JMH at 1, 2 and 4 benchmark threads, writes `jmh-indexing-t1.csv`, `jmh-indexing-t2.csv`, and `jmh-indexing-t4.csv`, and calls `scripts/plot_results.py`. **Note:** this script calls `"${JAVA_HOME}/bin/java"`; set `JAVA_HOME` to your JDK installation before running it. Python plotting dependencies must also be installed.
+The script compiles assessments, builds the take a look at classpath, invokes JMH at 1, 2 and four benchmark threads, writes `jmh-indexing-t1.Csv`, `jmh-indexing-t2.Csv`, and `jmh-indexing-t4.Csv`, and calls `scripts/plot_results.Py`. **Note:** this script calls `&quot;$JAVA_HOME/bin/java&quot;`; set `JAVA_HOME` for your JDK set up earlier than going for walks it. Python plotting dependencies should additionally be set up.
 
-**Ingestion and Search:** Each has a JMH `BenchmarkRunner` under `src/test/java/.../benchmark/`, but there is **no equivalent benchmark shell script** in the supplied repository. The following Maven commands build the test classpath and invoke the JMH main class directly (run each from its service directory):
+**Ingestion and Search:** Each has a JMH `BenchmarkRunner` under `src/check/java/.../benchmark/`, but there is **no equal benchmark shell script** in the provided repository. The following Maven instructions build the take a look at classpath and invoke the JMH predominant class immediately (run every from its carrier listing):
 
 ```bash
 mvn test-compile dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=target/test-classpath.txt
@@ -200,18 +200,19 @@ Existing result files can be found at:
 - `indexing-service/benchmarks/results/` (JMH thread comparisons, summary CSV, plots)
 - `search-service/benchmarks/results/` (latency and concurrency CSV/plots)
 
-**Measurement provenance:** Do not assume that a CSV named `jmh-results.csv` was generated by JMH. Verify its producer, configuration, units, and raw output before reporting it as a JMH measurement. The Ingestion CSV has previously been associated with local timing measurements rather than verified JMH execution.
+**Measurement provenance:** Do no longer count on that a CSV named `jmh-results.Csv` changed into generated by way of JMH. Verify its producer, configuration, gadgets, and raw output before reporting it as a JMH measurement. The Ingestion CSV has formerly been related to local timing measurements in place of tested JMH execution.
 
-The Ingestion storage-report helper is `ingestion-service/scripts/storage-report.py`; check its CLI usage before running it. Search plotting code is in `search-service/scripts/plot-benchmarks.py`. These scripts are separate from the JMH benchmark runner classes.
+The Ingestion storage-file helper is `ingestion-service/scripts/storage-file.Py`; test its CLI utilization earlier than strolling it. Search plotting code is in `search-service/scripts/plot-benchmarks.Py`. These scripts are break away the JMH benchmark runner lessons.
 
 ## 8. Concurrency, storage and known limitations
 
-- Ingestion writes `header.txt` and `body.txt` into `DATALAKE_PATH/<book_id>/`; the `.complete` marker indicates that a book is ready for Indexing. Per-book locking protects concurrent requests **inside one Ingestion process**.
-- Indexing reads completed books and publishes metadata/inverted-index data in the datamart. Search consumes those files; its behavior depends on the datamart being present and up to date.
-- Control stores pipeline states in `CONTROL_STATE_PATH` and serializes duplicate requests per book **within one Control process**. A failed request is marked `FAILED`; calling the process endpoint again can retry the workflow, but there is no demonstrated background retry scheduler.
-- A single-machine filesystem is a Stage 2 assumption. Multiple replicas sharing files require additional synchronization and consistency work; they should not be launched as though replica safety were already guaranteed.
-- The provided repository does not demonstrate a production thread-pool configuration interface, a multi-host deployment, or a comprehensive automated Control API contract suite.
+- Ingestion writes `header.Txt` and `body.Txt` into `DATALAKE_PATH/&lt;book_id&gt;/`; the `.Entire` marker indicates that a ebook is ready for Indexing. Per-ebook locking protects concurrent requests **inner one Ingestion method**.
+- Indexing reads finished books and publishes metadata/inverted-index facts in the datamart. Search consumes those files; its behavior relies upon on the datamart being gift and updated.
+- Control shops pipeline states in `CONTROL_STATE_PATH` and serializes reproduction requests per ebook **within one Control procedure**. A failed request is marked `FAILED`; calling the method endpoint again can retry the workflow, but there may be no confirmed history retry scheduler.
+- A unmarried-machine filesystem is a Stage 2 assumption. Multiple replicas sharing documents require additional synchronization and consistency work; they have to no longer be launched as even though reproduction protection had been already assured.
+- The supplied repository does now not display a production thread-pool configuration interface, a multi-host deployment, or a comprehensive automated Control API settlement suite.
+
 
 ## 9. Stage 3 directions
 
-Stage 3 should replace local-only assumptions with explicit cross-machine communication and shared/distributed storage, task ownership, failure recovery, safe publication of new index versions, service discovery, and repeatable integration/load tests. Measure coordination overhead and resource utilization under controlled workloads before drawing conclusions about replica scaling.
+Stage 3 needs to update local-only assumptions with specific go-gadget communication and shared/allotted storage, mission ownership, failure recuperation, secure booklet of latest index variations, provider discovery, and repeatable integration/load tests. Measure coordination overhead and resource usage below controlled workloads before drawing conclusions about reproduction scaling.
