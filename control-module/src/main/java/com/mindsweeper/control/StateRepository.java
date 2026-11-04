@@ -117,6 +117,24 @@ public class StateRepository {
         save();
     }
 
+    /** Registers a book for periodic processing without overwriting an existing state. */
+    public synchronized void registerPending(int bookId) throws IOException {
+        if (bookId <= 0) {
+            throw new IllegalArgumentException("Book ID must be positive");
+        }
+        PipelineRecord record = records.get(bookId);
+        if (record == null) {
+            record = new PipelineRecord();
+            record.state = PipelineState.PENDING;
+            records.put(bookId, record);
+            save();
+        } else if (record.state == PipelineState.FAILED) {
+            record.state = PipelineState.PENDING;
+            record.lastError = null;
+            save();
+        }
+    }
+
     public synchronized PipelineRecord getRecord(int bookId) {
         return records.get(bookId);
     }

@@ -22,6 +22,16 @@ public class ControlApp {
                 stateRepository
         );
 
+        long periodicInterval = Long.parseLong(
+                System.getenv().getOrDefault("PERIODIC_INTERVAL_SECONDS", "30")
+        );
+        boolean periodicEnabled = Boolean.parseBoolean(
+                System.getenv().getOrDefault("PERIODIC_ENABLED", "true")
+        );
+        PeriodicCoordinator periodicCoordinator = new PeriodicCoordinator(
+                coordinator, stateRepository, periodicInterval, periodicEnabled
+        );
+
         Javalin app = Javalin.create(config ->
                 config.jsonMapper(new GsonJsonMapper())
         );
@@ -87,6 +97,50 @@ public class ControlApp {
             }
         });
 
+        // Periodic strategy status
+        app.get("/periodic/status", ctx -> ctx.json(periodicCoordinator.status()));
+
+        // Add a book to the persistent pending queue for periodic processing.
+        app.post("/periodic/queue/{book_id}", ctx -> {
+            int bookId;
+            try {
+                bookId = Integer.parseInt(ctx.pathParam("book_id"));
+                if (bookId <= 0) throw new NumberFormatException();
+            } catch (NumberFormatException e) {
+                ctx.status(400);
+                ctx.json(Map.of("error", "invalid_book_id"));
+                return;
+            }
+
+            try {
+                stateRepository.registerPending(bookId);
+                PipelineState state = coordinator.getBookState(bookId);
+                ctx.status(state == PipelineState.PENDING ? 202 : 200);
+                ctx.json(Map.of(
+                        "book_id", bookId,
+                        "state", state.name(),
+                        "queued", state == PipelineState.PENDING
+                ));
+            } catch (IOException e) {
+                ctx.status(500);
+                ctx.json(Map.of("error", "could_not_queue_book", "details",
+                        e.getMessage() == null ? "Persistence failed" : e.getMessage()));
+            }
+        });
+
+        // Execute the pending batch immediately (useful for tests and benchmarks).
+        app.post("/periodic/run", ctx -> {
+            try {
+                ctx.json(periodicCoordinator.runBatch());
+            } catch (IllegalStateException e) {
+                ctx.status(409);
+                ctx.json(Map.of("error", e.getMessage()));
+            } catch (IOException e) {
+                ctx.status(500);
+                ctx.json(Map.of("error", "periodic_batch_failed"));
+            }
+        });
+
         // Get book processing state
         app.get("/state/{book_id}", ctx -> {
 
@@ -114,5 +168,9 @@ public class ControlApp {
         });
 
         app.start(port);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            periodicCoordinator.close();
+            app.stop();
+        }, "control-shutdown"));
     }
 }

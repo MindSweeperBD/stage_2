@@ -1,0 +1,13 @@
+strategy,book_id,elapsed_ms,state
+on_demand,1010,1566.432,FAILED
+on_demand,1011,204.845,FAILED
+on_demand,1012,1150.139,VERIFIED
+on_demand,1013,801.348,VERIFIED
+on_demand,1014,441.767,VERIFIED
+periodic_batch,1015,,VERIFIED
+periodic_batch,1016,,FAILED
+periodic_batch,1017,,VERIFIED
+periodic_batch,1018,,VERIFIED
+periodic_batch,1019,,VERIFIED
+on_demand_total,ALL,4164.704,throughput_books_per_second=1.201
+periodic_batch_total,ALL,3942.0,processed=4;failed=1;throughput_books_per_second=1.268
